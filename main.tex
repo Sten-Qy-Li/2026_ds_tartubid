@@ -1,0 +1,388 @@
+\documentclass[25pt,margin=1in,innermargin=-4.5in,blockverticalspace=0.35in]{tikzposter}
+\geometry{paperwidth=33.11in,paperheight=46.81in} %A0
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{csquotes}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage[export]{adjustbox}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{colortbl}
+\usepackage{tabularx}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,shapes.geometric,calc,fit,backgrounds,decorations.pathreplacing,patterns}
+\usepackage[backend=biber,style=numeric,sorting=none]{biblatex}
+\usepackage{unitartu-theme}
+\makeatletter
+\setlength{\TP@visibletextwidth}{31.0in}
+\setlength{\TP@visibletextheight}{45in}
+\makeatother
+\usepackage{bm}
+
+\addbibresource{refs.bib}
+
+% theme parameters
+\tikzposterlatexaffectionproofoff
+\usetheme{UniTartuTheme}
+\usecolorstyle{UniTartuStyle}
+
+\usepackage[scaled]{helvet}
+\renewcommand\familydefault{\sfdefault}
+\renewcommand{\vec}[1]{\bm{#1}}
+
+% --- poster meta -----------------------------------------------------------
+\title{\parbox{0.85\linewidth}{TartuBid: Clock Synchronization in a Distributed Online Auction}}
+\author{\textbf{Anup Kumar} \quad \textbf{Md Mumin Ul Bari} \quad \textbf{Sten (Qun-yan Li)}\textsuperscript{1}}
+\institute{\textsuperscript{1}Institute of Computer Science, University of Tartu \\
+LTAT.06.007 Distributed Systems --- Poster Session 2026}
+
+\titlegraphic{\includegraphics[width=0.32\linewidth]{unitartu_compact.png}}
+
+% --- handy macros ----------------------------------------------------------
+\newcommand{\msec}{\,\text{ms}}
+\newcommand{\usec}{\,\mu\text{s}}
+
+% cell colours for the comparison and outcome tables
+\definecolor{GoodGreen}{HTML}{C8E6C9}
+\definecolor{BadRed}{HTML}{FFCDD2}
+\definecolor{MehYellow}{HTML}{FFF59D}
+\newcommand{\gcell}[1]{\cellcolor{GoodGreen}#1}
+\newcommand{\rcell}[1]{\cellcolor{BadRed}#1}
+\newcommand{\ycell}[1]{\cellcolor{MehYellow}#1}
+
+% tabularx column types
+\newcolumntype{C}{>{\centering\arraybackslash}X}
+\newcolumntype{L}{>{\raggedright\arraybackslash}X}
+
+% ===========================================================================
+\begin{document}
+\maketitle
+\centering
+\begin{columns}
+
+% ============================ LEFT COLUMN ==================================
+\column{0.5}
+
+% --- INTRODUCTION ----------------------------------------------------------
+\block{Introduction}{
+\textbf{TartuBid} is a distributed online auction platform. Bidders
+on the public Internet place bids on items hosted by sharded
+auction servers; whoever holds the highest bid \emph{strictly
+before} the deadline wins.
+
+\bigskip
+\textbf{Fairness depends on whose timestamp is trusted.} A cheap
+quartz oscillator drifts roughly $1\msec$ per $20$~s if
+uncorrected~\cite{vansteen2017ds}; modest skew between auction
+servers can flip the winner of a close auction:
+
+\bigskip
+\begin{center}
+\begin{tikzpicture}[
+    x=4.0cm, y=1.7cm, font=\Large,
+    bid/.style={circle, inner sep=6pt},
+    anup/.style={bid, fill=MainBlue},
+    mumin/.style={bid, fill=Orange},
+    axisline/.style={->, very thick},
+    deadline/.style={ultra thick, DarkBlue, dashed},
+    rowlabel/.style={anchor=east, font=\Large\bfseries}
+  ]
+  \node[rowlabel] at (-0.3, 3.0) {True UTC};
+  \draw[axisline] (-0.2, 3.0) -- (4.8, 3.0) node[right] {time};
+  \draw[deadline] (2.5, 2.4) -- (2.5, 3.9)
+        node[above, font=\Large\bfseries, text=DarkBlue] {deadline};
+
+  \node[anup]  (A1) at (1.5, 3.0) {};
+  \node[below=4pt of A1, scale=0.85, text=MainBlue, align=center]
+        {\textbf{Anup} (100)\\$-40\msec$ (on time)};
+
+  \node[mumin] (M1) at (3.5, 3.0) {};
+  \node[below=4pt of M1, scale=0.85, text=Orange, align=center]
+        {\textbf{Mumin} (110)\\$+30\msec$ (late)};
+
+  \node[rowlabel] at (-0.3, 0.0) {eu-west reads};
+  \draw[axisline] (-0.2, 0.0) -- (4.8, 0.0) node[right] {server clock};
+  \draw[deadline] (2.5, -0.6) -- (2.5, 0.9);
+  \node[anup] (A2) at (2.9, 0.0) {};
+  \node[below=4pt of A2, scale=0.85, text=MainBlue, align=center]
+        {appears $+40\msec$\\\textbf{(late!)}};
+
+  \node[rowlabel] at (-0.3, -3.0) {us-east reads};
+  \draw[axisline] (-0.2, -3.0) -- (4.8, -3.0) node[right] {server clock};
+  \draw[deadline] (2.5, -3.6) -- (2.5, -2.1);
+  \node[mumin] (M2) at (2.1, -3.0) {};
+  \node[below=4pt of M2, scale=0.85, text=Orange, align=center]
+        {appears $-30\msec$\\\textbf{(on time!)}};
+\end{tikzpicture}
+\end{center}
+
+\bigskip
+With eu-west $+80\msec$ fast and us-east $-60\msec$ slow, a
+na\"ive coordinator would \emph{reject} the on-time bid and
+\emph{accept} the late one.
+}
+
+% --- SYSTEM MODEL ----------------------------------------------------------
+\block{System model}{
+
+\textbf{Architecture.} Bidder clients issue bids over HTTPS to one
+of several auction servers, each authoritative for a shard of
+items. A central \emph{coordinator} resolves winners after each
+item's deadline.
+
+\bigskip
+\begin{center}
+\begin{tikzpicture}[
+    font=\Large,
+    client/.style ={draw=DarkBlue, fill=Blue10,    rounded corners=6pt,
+                    minimum width=4.8cm, minimum height=2.0cm, align=center, very thick},
+    server/.style ={draw=MainBlue, fill=Blue20,    rounded corners=6pt,
+                    minimum width=6.0cm, minimum height=2.6cm, align=center, ultra thick},
+    coord/.style  ={draw=Orange,   fill=Orange!20, rounded corners=6pt,
+                    minimum width=6.6cm, minimum height=2.6cm, align=center, ultra thick},
+    sync/.style   ={-{Stealth[length=5mm]}, line width=1.6pt, MainBlue},
+    async/.style  ={-{Stealth[length=5mm]}, line width=1.6pt, dashed, Orange},
+    rel/.style    ={-{Stealth[length=5mm]}, line width=2.4pt, DarkBlue}
+  ]
+  \node[client] (c1) at (0,  5.4) {Bidder\\client};
+  \node[client] (c2) at (0,  0.0) {Bidder\\client};
+  \node[client] (c3) at (0, -5.4) {Bidder\\client};
+
+  \node[server] (s1) at (12,  3.0) {\textbf{auction-eu}\\(shard A)};
+  \node[server] (s2) at (12, -3.0) {\textbf{auction-us}\\(shard B)};
+
+  \node[coord]  (co) at (24, 0.0) {\textbf{Coordinator}\\\& winner resolver};
+
+  \foreach \c/\s in {c1/s1, c2/s1, c3/s1, c1/s2, c2/s2, c3/s2} {
+     \draw[sync] (\c.east) -- (\s.west);
+  }
+  \draw[async] (s1.south west) to[bend right=10] (c2.north east);
+
+  \draw[rel] (s1.east) -- (co.west);
+  \draw[rel] (s2.east) -- (co.west);
+
+  % cluster box -- label placed inside the box, above s1, so it does not
+  % collide with the bidder clients on the left.
+  \node[draw=Gray, dashed, rounded corners, fit=(s1)(s2),
+        inner sep=22pt] (cluster) {};
+  \node[font=\large\bfseries, text=DarkBlue,
+        anchor=south] at ($(cluster.north)+(0,4pt)$)
+        {auction-server cluster};
+
+  % --- legend (centred under the diagram, wider) ---
+  \node[draw=Gray, rounded corners, fill=white,
+        anchor=north, inner sep=12pt,
+        font=\large] (leg) at (12, -8.0) {
+    \begin{tabular}{@{}l@{\;\;}l@{\quad}l@{\;\;}l@{}}
+      \tikz[baseline=-0.6ex] \draw[-{Stealth[length=4mm]}, line width=1.6pt, MainBlue] (0,0) -- (1.4,0);
+        & sync request/response &
+      \tikz[baseline=-0.6ex] \draw[-{Stealth[length=4mm]}, line width=1.6pt, dashed, Orange] (0,0) -- (1.4,0);
+        & async outcome \\[8pt]
+      \multicolumn{4}{@{}l}{%
+      \tikz[baseline=-0.6ex] \draw[-{Stealth[length=4mm]}, line width=2.4pt, DarkBlue] (0,0) -- (1.4,0);
+        \;\; reliable unicast (TCP + retry on crash / omission)}
+    \end{tabular}
+  };
+\end{tikzpicture}
+\end{center}
+
+\bigskip
+\textbf{Timing model.} Partially synchronous: bounded but unknown
+delay and drift; cross-server skew is the dominant hazard near a
+closing window.
+
+\textbf{Failure model.} Crash and omission failures, masked by
+retry + persistence. Byzantine failures are out of scope.
+}
+
+% --- MECHANISMS (compact 2-column inner layout per mechanism) --------------
+\block{Mechanisms}{
+
+% ======= (a) NTP =======
+\begin{minipage}[t]{0.50\linewidth}\vspace{0pt}
+\textbf{(a) NTP --- Network Time Protocol.}\\
+Four-timestamp exchange against a stratum-$n$ reference; client
+estimates offset $\theta$ and round-trip delay
+$\delta$~\cite{mills1991ntp,rfc5905}.
+\[
+   \theta = \tfrac{(t_2 - t_1) + (t_3 - t_4)}{2},
+   \;\;
+   \delta = (t_4 - t_1) - (t_3 - t_2).
+\]
+\end{minipage}%
+\hfill
+\begin{minipage}[t]{0.46\linewidth}\vspace{0pt}
+\centering
+\begin{tikzpicture}[font=\large, x=1.3cm, y=1.0cm]
+  \node[font=\large\bfseries] at (0.8, 4.4) {Client};
+  \node[font=\large\bfseries] at (6.0, 4.4) {Reference};
+  \draw[ultra thick, DarkBlue] (0.8, 3.8) -- (0.8, 0.0);
+  \draw[ultra thick, DarkBlue] (6.0, 3.8) -- (6.0, 0.0);
+  \draw[-{Stealth[length=3.5mm]}, very thick] (0.8, 3.2) -- (6.0, 2.6);
+  \filldraw[DarkBlue] (0.8, 3.2) circle (3pt) node[left, font=\large] {$t_1$};
+  \filldraw[DarkBlue] (6.0, 2.6) circle (3pt) node[right, font=\large] {$t_2$};
+  \draw[-{Stealth[length=3.5mm]}, very thick] (6.0, 1.4) -- (0.8, 0.8);
+  \filldraw[DarkBlue] (6.0, 1.4) circle (3pt) node[right, font=\large] {$t_3$};
+  \filldraw[DarkBlue] (0.8, 0.8) circle (3pt) node[left, font=\large] {$t_4$};
+\end{tikzpicture}
+\end{minipage}
+
+\smallskip
+% ======= (b) Berkeley =======
+\begin{minipage}[t]{0.50\linewidth}\vspace{0pt}
+\textbf{(b) Berkeley algorithm.}\\
+A daemon polls every server's clock, averages them, and sends each
+server an individual adjustment~\cite{gusella1989berkeley}.
+\[
+   C_{\text{cons}} = \tfrac{1}{n}\sum_{i} C_i,
+   \;\; \Delta_i = C_{\text{cons}} - C_i.
+\]
+\end{minipage}%
+\hfill
+\begin{minipage}[t]{0.46\linewidth}\vspace{0pt}
+\centering
+\begin{tikzpicture}[font=\large,
+   srv/.style={circle, draw=MainBlue, fill=Blue20, minimum size=1.3cm,
+               ultra thick, align=center},
+   dmn/.style={circle, draw=Orange,   fill=Orange!20, minimum size=1.7cm,
+               ultra thick, align=center},
+   poll/.style={-{Stealth[length=3mm]}, very thick, MainBlue},
+   adj/.style ={-{Stealth[length=3mm]}, very thick, dashed, Orange}
+  ]
+  \node[dmn] (d) at (0,0) {daemon};
+  \node[srv] (s1) at (-2.4, 1.6) {S$_1$};
+  \node[srv] (s2) at ( 2.4, 1.6) {S$_2$};
+  \node[srv] (s3) at (-2.4,-1.6) {S$_3$};
+  \node[srv] (s4) at ( 2.4,-1.6) {S$_4$};
+  \foreach \s in {s1,s2,s3,s4} {
+     \draw[poll, bend left=10] (d) to (\s);
+     \draw[adj,  bend left=10] (\s) to (d);
+  }
+  \node[anchor=west, font=\normalsize, text=MainBlue] at (2.9, 0.45) {poll};
+  \node[anchor=west, font=\normalsize, text=Orange]   at (2.9,-0.45) {adjust};
+\end{tikzpicture}
+\end{minipage}
+
+\smallskip
+% ======= (c) TrueTime =======
+\begin{minipage}[t]{0.50\linewidth}\vspace{0pt}
+\textbf{(c) TrueTime (Google Spanner).}\\
+Replaces a point-valued ``now'' with an uncertainty interval;
+deadlines use \emph{commit-wait} to guarantee external
+consistency~\cite{corbett2012spanner}.
+\[
+   \mathrm{TT.now}() = [\,t - \varepsilon,\; t + \varepsilon\,].
+\]
+\end{minipage}%
+\hfill
+\begin{minipage}[t]{0.46\linewidth}\vspace{0pt}
+\centering
+\begin{tikzpicture}[font=\normalsize, x=0.85cm, y=0.75cm]
+  \draw[->, ultra thick] (-0.5, 0) -- (10, 0) node[right] {time};
+  \draw[ultra thick, DarkBlue, dashed] (5.5, -1.7) -- (5.5, 2.0)
+        node[above, font=\large\bfseries, text=DarkBlue] {deadline};
+
+  % safe interval (B_1)
+  \draw[ultra thick, MainBlue] (1.2, 0.9) -- (3.2, 0.9);
+  \draw[ultra thick, MainBlue] (1.2, 0.75) -- (1.2, 1.05);
+  \draw[ultra thick, MainBlue] (3.2, 0.75) -- (3.2, 1.05);
+  \node[font=\normalsize, text=MainBlue, anchor=south] at (2.2, 1.05)
+        {B$_1$ before};
+  \node[font=\normalsize, anchor=west, text=STGreen] at (7.5, 0.9) {commit \checkmark};
+
+  % straddling interval (B_2)
+  \draw[ultra thick, Orange] (4.5, -0.9) -- (6.5, -0.9);
+  \draw[ultra thick, Orange] (4.5, -1.05) -- (4.5, -0.75);
+  \draw[ultra thick, Orange] (6.5, -1.05) -- (6.5, -0.75);
+  \node[font=\normalsize, text=Orange, anchor=north] at (5.5, -1.05)
+        {B$_2$ straddles};
+  \node[font=\normalsize, anchor=west, text=Orange] at (7.5, -0.9) {wait};
+\end{tikzpicture}
+\end{minipage}
+}
+
+% =========================== RIGHT COLUMN ==================================
+\column{0.5}
+
+% --- COMPARISON AND OUR CHOICE --------------------------------------------
+\block{Comparison and our choice}{
+
+\renewcommand{\arraystretch}{1.35}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{6.6cm} C C C@{}}
+\toprule
+                          & \textbf{NTP}              & \textbf{Berkeley}     & \textbf{TrueTime}         \\
+\midrule
+Typical accuracy          & \ycell{$1\text{--}10\msec$ (WAN)} & \ycell{ms (internal)} & \gcell{$\varepsilon\!\le\!7\msec$} \\
+External UTC alignment    & \gcell{yes}               & \rcell{no}            & \gcell{yes}               \\
+Extra hardware            & \gcell{none}              & \gcell{none}          & \rcell{GPS + atomic / DC} \\
+Handles unknown delay     & \ycell{via filtering}     & \ycell{via averaging} & \gcell{via $\varepsilon$ bound} \\
+Refuses ambiguous order   & \rcell{no}                & \rcell{no}            & \gcell{yes (commit-wait)} \\
+Operational cost          & \gcell{low}               & \gcell{very low}      & \rcell{high}              \\
+Failure if reference down & \ycell{free-run drift}    & \gcell{still converges} & \ycell{widens $\varepsilon$} \\
+\bottomrule
+\end{tabularx}
+
+\bigskip
+\raggedright
+\textbf{Justification.}
+\emph{Berkeley alone} converges the cluster on \emph{some} time,
+but not on UTC, and bidders' own clocks (UI countdowns) are
+excluded from the average.
+\emph{NTP} delivers $\sim$millisecond accuracy at zero marginal
+cost --- enough for our deadline granularity.
+
+\bigskip
+\centering
+\colorbox{Blue10}{\parbox{0.95\linewidth}{\centering\vspace{6pt}
+\textbf{We adopt NTP everywhere, with a TrueTime-inspired
+uncertainty band $\varepsilon = 50\msec$ around each closing
+instant.}\\[6pt]
+\large Bids inside
+$[\,t_{\text{close}}-\varepsilon,\;t_{\text{close}}+\varepsilon\,]$
+trigger \emph{commit-wait} --- NTP's cost profile with TrueTime's
+safety, exactly where it matters.
+\vspace{6pt}}}
+}
+
+% --- PROTOTYPE EVIDENCE ----------------------------------------------------
+\block{Prototype evidence}{
+Python prototype (\texttt{tartubid/}, $\sim$300 lines) replays the
+Introduction scenario with $\pm 80\msec$ deliberate skew.
+
+\bigskip
+\renewcommand{\arraystretch}{1.4}
+\begin{tabularx}{\linewidth}{@{}L L L@{}}
+\toprule
+\textbf{Strategy}            & \textbf{Resolved winner}         & \textbf{Outcome} \\
+\midrule
+Naive (no sync)              & Mumin (110)                      & \rcell{$\times$\;\textbf{wrong winner}} \\
+NTP                          & Anup (100)                       & \gcell{$\checkmark$\;\textbf{correct}} \\
+Berkeley                     & Anup (100)                       & \gcell{$\checkmark$\;\textbf{correct}} \\
+TrueTime                     & ---~commit-wait~---              & \cellcolor{Blue20}\textbf{safe (no premature commit)} \\
+\bottomrule
+\end{tabularx}
+
+\bigskip
+\raggedright
+The na\"ive resolver hands the auction to the wrong bidder. NTP
+and Berkeley recover the correct winner once timestamps are
+rewritten onto a consensus clock. TrueTime additionally refuses
+to commit while the deadline lies inside the uncertainty interval.
+}
+
+% --- REFERENCES ------------------------------------------------------------
+\block{References}{
+\small
+\begin{center}
+\mbox{}\vspace{-1\baselineskip}
+\printbibliography[heading=none]
+\end{center}
+}
+
+\end{columns}
+\end{document}
