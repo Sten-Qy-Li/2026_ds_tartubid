@@ -26,6 +26,14 @@
 
 \addbibresource{refs.bib}
 
+% biblatex enters \printbibliography in its own group and ignores font-size
+% selectors at the call site, so we use the \AtBeginBibliography hook to
+% inject formatting that biblatex applies internally. tikzposter wraps
+% every \block body in \large (see tikzposter.cls line 403), so the
+% bibliography must be \large -- not \normalsize -- to match the body
+% text size used in the other poster blocks.
+\AtBeginBibliography{\large}
+
 % theme parameters
 \tikzposterlatexaffectionproofoff
 \usetheme{UniTartuTheme}
