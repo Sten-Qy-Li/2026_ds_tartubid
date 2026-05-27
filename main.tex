@@ -125,6 +125,12 @@ servers can flip the winner of a close auction:
 With eu-west $+80\msec$ fast and us-east $-60\msec$ slow, a
 na\"ive coordinator would \emph{reject} the on-time bid and
 \emph{accept} the late one.
+
+\bigskip
+\textbf{An online auction therefore demands \emph{strict} clock
+alignment around the deadline} --- not merely accurate-on-average.
+We compare two standard baselines against an advanced mechanism
+that meets this stricter requirement.
 }
 
 % --- SYSTEM MODEL ----------------------------------------------------------
@@ -272,9 +278,9 @@ server an individual adjustment~\cite{gusella1989berkeley}.
 % ======= (c) TrueTime =======
 \begin{minipage}[t]{0.50\linewidth}\vspace{0pt}
 \textbf{(c) TrueTime (Google Spanner).}\\
-Replaces a point-valued ``now'' with an uncertainty interval;
-deadlines use \emph{commit-wait} to guarantee external
-consistency~\cite{corbett2012spanner}.
+Returns a \emph{bounded} interval rather than a point; with
+\emph{commit-wait}, ambiguous orderings are \textbf{refused}
+rather than guessed~\cite{corbett2012spanner}.
 \[
    \mathrm{TT.now}() = [\,t - \varepsilon,\; t + \varepsilon\,].
 \]
@@ -361,8 +367,8 @@ Introduction scenario with $\pm 80\msec$ deliberate skew.
 \textbf{Strategy}            & \textbf{Resolved winner}         & \textbf{Outcome} \\
 \midrule
 Naive (no sync)              & Mumin (110)                      & \rcell{$\times$\;\textbf{wrong winner}} \\
-NTP                          & Anup (100)                       & \gcell{$\checkmark$\;\textbf{correct}} \\
-Berkeley                     & Anup (100)                       & \gcell{$\checkmark$\;\textbf{correct}} \\
+NTP                          & Anup (100)                       & \gcell{$\checkmark$\;\textbf{matched, no guarantee}} \\
+Berkeley                     & Anup (100)                       & \gcell{$\checkmark$\;\textbf{matched, no guarantee}} \\
 TrueTime                     & ---~commit-wait~---              & \cellcolor{Blue20}\textbf{safe (no premature commit)} \\
 \bottomrule
 \end{tabularx}
@@ -370,9 +376,10 @@ TrueTime                     & ---~commit-wait~---              & \cellcolor{Blu
 \bigskip
 \raggedright
 The na\"ive resolver hands the auction to the wrong bidder. NTP
-and Berkeley recover the correct winner once timestamps are
-rewritten onto a consensus clock. TrueTime additionally refuses
-to commit while the deadline lies inside the uncertainty interval.
+and Berkeley happen to match the true winner in this run, but
+neither refuses ambiguous orderings --- the match is run-specific,
+not guaranteed. TrueTime alone refuses to commit while the
+deadline lies inside the uncertainty interval.
 }
 
 % --- REFERENCES ------------------------------------------------------------
