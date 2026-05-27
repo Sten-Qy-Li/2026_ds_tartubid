@@ -29,3 +29,24 @@ main.pdf
 # OS
 .DS_Store
 Thumbs.db
+
+# Local intermediate poster renders (timestamped PDFs/PNGs, screenshots)
+2026-*.pdf
+2026-*.png
+2026_*.pdf
+Screenshot *.png
+20260526_134220.jpg.jpeg
+
+# Review-round subdirectories created during TA / team-lead iterations
+2026-*-*_*/
+
+# Lecturer-provided / course-private materials (not redistributable)
+lecture-ppt/
+assignment-specification.md
+UniTartuCS-Poster-Template_Portrait.zip
+
+# Template assets bundled with UniTartuCS-Poster-Template but not used
+# by main.tex (current main.tex only references unitartu_compact.png)
+kitten.jpg
+logo_ut.png
+unitartu_main.png
