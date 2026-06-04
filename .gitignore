@@ -26,6 +26,10 @@ env/
 # Compiled poster PDF (source-of-truth is main.tex)
 main.pdf
 
+# Compiled speaking-guide PDF (source-of-truth is speaking-guide.tex,
+# recompiled on Overleaf Premium)
+speaking-guide/*.pdf
+
 # OS
 .DS_Store
 Thumbs.db
